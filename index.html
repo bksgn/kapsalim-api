@@ -10,34 +10,32 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Firebase SDK (CDN üzerinden) -->
-    <script type="module">
+</head>
+<body class="bg-slate-950 text-slate-200 selection:bg-yellow-500/30">
+    <div id="root"></div>
+
+    <script type="module" data-type="babel">
+        // Firebase SDK'larını CDN üzerinden içe aktarıyoruz (Daha hızlı ve kurulum gerektirmez)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-        // --- ÖNEMLİ: Eğer API linki almak istiyorsan Firebase konsolundan aldığın bilgileri buraya yazmalısın ---
+        // --- GÜNCELLENDİ: Senin Özel Firebase Bilgilerin ---
         const firebaseConfig = {
-            apiKey: "BURAYA_API_KEY_GELECEK",
-            authDomain: "PROJE_ID.firebaseapp.com",
-            projectId: "PROJE_ID",
-            storageBucket: "PROJE_ID.appspot.com",
-            messagingSenderId: "SENDER_ID",
-            appId: "APP_ID"
+            apiKey: "AIzaSyD4JRSgF54worgAYI2V0_7fOuRo3OS1VS8",
+            authDomain: "kapisalim-api.firebaseapp.com",
+            projectId: "kapisalim-api",
+            storageBucket: "kapisalim-api.firebasestorage.app",
+            messagingSenderId: "928562131117",
+            appId: "1:928562131117:web:d27bf8b26338714131d624",
+            measurementId: "G-61FNJGC6HB"
         };
-        // -----------------------------------------------------
+        // --------------------------------------------------
 
-        window.fbApp = initializeApp(firebaseConfig);
-        window.fbDb = getFirestore(window.fbApp);
-        window.fbAuth = getAuth(window.fbApp);
-        window.fbUtils = { collection, addDoc, serverTimestamp, signInAnonymously };
-    </script>
-</head>
-<body class="bg-slate-950 text-slate-200">
-    <div id="root"></div>
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
 
-    <script type="text/babel">
         const { useState } = React;
 
         const App = () => {
@@ -48,46 +46,64 @@
             const [loading, setLoading] = useState(false);
             const [status, setStatus] = useState({ message: '', type: '' });
 
+            // Soru Ayrıştırma Mantığı
             const handleParse = () => {
                 if (!inputText.trim()) {
-                    setStatus({ message: 'Lütfen metin girin!', type: 'error' });
+                    setStatus({ message: 'Lütfen önce soru metnini yapıştırın!', type: 'error' });
                     return;
                 }
                 const answers = {};
                 if (answerKey) {
-                    answerKey.split(/[,-\s]+/).forEach((val, i, arr) => {
-                        if (i % 2 === 0 && arr[i+1]) answers[val.replace('.', '')] = arr[i+1].toUpperCase();
-                    });
+                    const pairs = answerKey.split(/[,-\s]+/);
+                    for (let i = 0; i < pairs.length; i += 2) {
+                        if (pairs[i] && pairs[i+1]) {
+                            answers[pairs[i].replace('.', '')] = pairs[i+1].toUpperCase();
+                        }
+                    }
                 }
+
                 const blocks = inputText.split(/\n(?=\d+[\.)\s])/);
                 const parsed = blocks.map((block, i) => {
                     const parts = block.split(/\n([A-E][\)\.])\s+/);
                     const qText = parts[0].replace(/^\d+[\.)\s]+/, '').trim();
                     const opts = {};
-                    for (let j = 1; j < parts.length; j += 2) opts[parts[j][0]] = parts[j + 1]?.trim() || "";
-                    const id = block.match(/^(\d+)/)?.[1] || (i + 1);
+                    for (let j = 1; j < parts.length; j += 2) {
+                        const key = parts[j][0];
+                        opts[key] = parts[j + 1] ? parts[j + 1].trim() : "";
+                    }
+                    const idMatch = block.match(/^(\d+)/);
+                    const id = idMatch ? idMatch[1] : (i + 1);
+
                     return { id: parseInt(id), question: qText, options: opts, answer: answers[id] || "A" };
                 }).filter(q => q.question);
 
                 setQuestions(parsed);
+                setGeneratedUrl(''); // Yeni ayrıştırmada eski linki temizle
                 setStatus({ message: `✅ ${parsed.length} soru ayrıştırıldı.`, type: 'success' });
             };
 
+            // Firebase'e Kaydetme ve Link Oluşturma
             const handleSave = async () => {
-                if (!questions) return;
+                if (!questions || questions.length === 0) return;
                 setLoading(true);
                 try {
-                    await window.fbUtils.signInAnonymously(window.fbAuth);
-                    const docRef = await window.fbUtils.addDoc(window.fbUtils.collection(window.fbDb, "quizzes"), {
+                    // Anonim giriş yap (Kritik: Firebase Auth'da Anonymous açık olmalı)
+                    await signInAnonymously(auth);
+                    
+                    // Firestore'a döküman ekle
+                    const docRef = await addDoc(collection(db, "quizzes"), {
                         questions,
-                        createdAt: window.fbUtils.serverTimestamp()
+                        createdAt: serverTimestamp()
                     });
-                    const url = `https://firestore.googleapis.com/v1/projects/${window.fbApp.options.projectId}/databases/(default)/documents/quizzes/${docRef.id}?meta=false`;
+                    
+                    // REST API formatında URL oluştur
+                    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/quizzes/${docRef.id}?meta=false`;
+                    
                     setGeneratedUrl(url);
-                    setStatus({ message: '🚀 API Linki Başarıyla Oluşturuldu!', type: 'success' });
+                    setStatus({ message: '🚀 API Endpoint yayına alındı!', type: 'success' });
                 } catch (e) {
-                    console.error(e);
-                    setStatus({ message: 'Hata: Firebase bilgilerini index.html içinde güncellemelisin!', type: 'error' });
+                    console.error("Hata:", e);
+                    setStatus({ message: 'Bağlantı Hatası! Firebase Firestore kurallarını "Allow" yapmayı ve Authentication kısmından "Anonymous" girişini açmayı unutmayın.', type: 'error' });
                 }
                 setLoading(false);
             };
@@ -103,75 +119,75 @@
             };
 
             return (
-                <div className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto space-y-8">
-                    <div className="text-center">
-                        <h1 className="text-4xl font-black text-yellow-500 tracking-tighter">KAPIŞALIM CLOUD</h1>
-                        <p className="text-slate-500 text-sm">Ücretsiz Soru Bankası API Fabrikası</p>
-                    </div>
+                <div className="min-h-screen p-4 md:p-10 max-w-7xl mx-auto space-y-8">
+                    <header className="text-center animate-in fade-in slide-in-from-top-4 duration-1000">
+                        <h1 className="text-6xl font-black text-yellow-500 tracking-tighter italic drop-shadow-2xl">KAPIŞALIM CLOUD</h1>
+                        <p className="text-slate-400 mt-2 font-medium tracking-wide">Ücretsiz & Kalıcı Soru Bankası API Fabrikası</p>
+                    </header>
 
                     <div className="grid lg:grid-cols-2 gap-8">
-                        {/* Sol Taraf: Giriş */}
-                        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 space-y-6 shadow-2xl">
+                        {/* Giriş Paneli */}
+                        <div className="bg-slate-900/60 p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl space-y-6 backdrop-blur-xl">
                             <div>
-                                <label className="block text-[10px] font-bold text-yellow-500 uppercase mb-2">1. SORU METNİNİ YAPIŞTIR</label>
+                                <label className="block text-[10px] font-bold text-yellow-500 uppercase mb-3 tracking-widest px-2">1. SORU METNİNİ YAPIŞTIR</label>
                                 <textarea 
                                     value={inputText} 
                                     onChange={e=>setInputText(e.target.value)} 
-                                    className="w-full h-64 bg-black p-4 rounded-2xl text-sm outline-none border border-slate-800 focus:border-yellow-500 transition-all font-mono" 
+                                    className="w-full h-80 bg-black/40 p-5 rounded-3xl text-sm outline-none border border-slate-800 focus:border-yellow-500 transition-all font-mono leading-relaxed scrollbar-hide" 
                                     placeholder="1. Soru metni...&#10;A) Seçenek 1&#10;B) Seçenek 2..."
                                 ></textarea>
                             </div>
                             
                             <div>
-                                <label className="block text-[10px] font-bold text-yellow-500 uppercase mb-2">2. CEVAPLAR (OPSİYONEL)</label>
+                                <label className="block text-[10px] font-bold text-yellow-500 uppercase mb-3 tracking-widest px-2">2. CEVAP ANAHTARI (1-C, 2-D...)</label>
                                 <input 
                                     value={answerKey} 
                                     onChange={e=>setAnswerKey(e.target.value)} 
-                                    className="w-full bg-black p-3 rounded-xl text-sm outline-none border border-slate-800 focus:border-yellow-500" 
+                                    className="w-full bg-black/40 p-4 rounded-2xl text-sm outline-none border border-slate-800 focus:border-yellow-500" 
                                     placeholder="Örn: 1-C, 2-D, 3-B"
                                 />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <button onClick={handleParse} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 rounded-2xl transition-all shadow-lg shadow-yellow-500/20">
+                            <div className="grid grid-cols-2 gap-4 pt-2">
+                                <button onClick={handleParse} className="bg-yellow-500 hover:bg-yellow-400 text-black font-black py-5 rounded-2xl transition-all shadow-xl shadow-yellow-500/10 active:scale-95">
                                     METNİ ÇÖZ ✨
                                 </button>
-                                <button onClick={handleSave} disabled={!questions || loading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition-all disabled:opacity-30 flex items-center justify-center">
-                                    {loading ? "..." : "API OLUŞTUR 🌐"}
+                                <button onClick={handleSave} disabled={!questions || loading} className="bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl transition-all disabled:opacity-20 flex items-center justify-center shadow-xl shadow-blue-600/10 active:scale-95">
+                                    {loading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : "API OLUŞTUR 🌐"}
                                 </button>
                             </div>
                         </div>
 
-                        {/* Sağ Taraf: Önizleme ve Link */}
-                        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 flex flex-col shadow-2xl">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="text-sm font-bold text-green-500 uppercase tracking-widest">JSON ÖNİZLEME</h3>
+                        {/* Sonuç Paneli */}
+                        <div className="bg-slate-900/60 p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl flex flex-col min-h-[500px] backdrop-blur-xl">
+                            {generatedUrl && (
+                                <div className="mb-8 p-5 bg-blue-500/10 border border-blue-500/20 rounded-3xl animate-in fade-in zoom-in duration-500">
+                                    <label className="block text-[10px] font-bold text-blue-400 uppercase mb-3 tracking-widest px-1">API Endpoint URL (OpenTDB Standart):</label>
+                                    <div className="flex gap-2">
+                                        <input readOnly value={generatedUrl} className="flex-grow bg-black/40 p-3 rounded-xl text-[10px] text-blue-300 outline-none border border-blue-500/10 font-mono"/>
+                                        <button onClick={()=>copy(generatedUrl)} className="bg-blue-600 hover:bg-blue-500 text-white px-5 rounded-xl text-xs font-bold transition-all shrink-0">KOPYALA</button>
+                                    </div>
+                                    <p className="text-[9px] text-slate-500 mt-3 px-1 italic">Bu link ile Wix, WordPress veya Mobil uygulamanızdan soruları çekebilirsiniz.</p>
+                                </div>
+                            )}
+
+                            <div className="flex justify-between items-center mb-4 px-2">
+                                <h3 className="text-xs font-bold text-green-500 uppercase tracking-widest">JSON Veri Önizleme</h3>
                                 {questions && (
-                                    <button onClick={()=>copy(JSON.stringify(questions, null, 2))} className="text-[10px] text-slate-500 hover:text-white underline">
-                                        JSON'U KOPYALA
+                                    <button onClick={()=>copy(JSON.stringify(questions, null, 2))} className="text-[10px] text-slate-500 hover:text-white transition-colors underline decoration-dotted">
+                                        Ham Veriyi Kopyala
                                     </button>
                                 )}
                             </div>
 
-                            {generatedUrl && (
-                                <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl animate-pulse-once">
-                                    <label className="block text-[10px] font-bold text-blue-400 uppercase mb-2">Senin Canlı API Linkin:</label>
-                                    <div className="flex gap-2">
-                                        <input readOnly value={generatedUrl} className="flex-grow bg-black p-2 rounded-lg text-[10px] text-blue-300 outline-none border border-blue-500/20"/>
-                                        <button onClick={()=>copy(generatedUrl)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg text-[10px] font-bold">KOPYALA</button>
-                                    </div>
-                                    <p className="text-[9px] text-slate-500 mt-2">* Bu link her yerde (Wix, Mobil vb.) çalışır.</p>
-                                </div>
-                            )}
-
-                            <div className="flex-grow bg-black/50 p-4 rounded-2xl font-mono text-[11px] text-green-500 overflow-auto max-h-[450px] border border-slate-800">
-                                {questions ? <pre>{JSON.stringify(questions, null, 2)}</pre> : <div className="h-full flex items-center justify-center text-slate-700 italic">İşlem bekleniyor...</div>}
+                            <div className="flex-grow bg-black/40 p-6 rounded-3xl font-mono text-[11px] text-green-500 overflow-auto border border-slate-800 scrollbar-hide">
+                                {questions ? <pre>{JSON.stringify(questions, null, 2)}</pre> : <div className="h-full flex flex-col items-center justify-center text-slate-700 opacity-40 italic"><p>Lütfen metni ayıklayın...</p></div>}
                             </div>
                         </div>
                     </div>
 
                     {status.message && (
-                        <div className={`text-center text-xs font-bold p-3 rounded-xl border ${status.type==='error'?'bg-red-500/10 border-red-500/20 text-red-400':'bg-green-500/10 border-green-500/20 text-green-400'}`}>
+                        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl border shadow-2xl text-sm font-bold animate-in fade-in slide-in-from-bottom-4 ${status.type==='error'?'bg-red-500/10 border-red-500/30 text-red-400':'bg-green-500/10 border-green-500/30 text-green-400'}`}>
                             {status.message}
                         </div>
                     )}
