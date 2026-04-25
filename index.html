@@ -15,13 +15,19 @@
         .loader { border: 2px solid #f3f3f3; border-top: 2px solid #eab308; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; display: inline-block; margin-right: 8px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         textarea::placeholder { color: #4a5568; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0b0f1a; }
+        ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 10px; }
     </style>
 </head>
 <body class="min-h-screen p-4 flex flex-col items-center justify-center">
 
     <div class="w-full max-w-6xl space-y-6">
         <header class="text-center space-y-2">
-            <h1 class="text-3xl md:text-5xl font-black text-yellow-500 italic uppercase tracking-tighter">⚡ HIZLI SORU FABRİKASI</h1>
+            <div class="flex items-center justify-center gap-3">
+                <span class="text-4xl">⚡</span>
+                <h1 class="text-3xl md:text-5xl font-black text-yellow-500 italic uppercase tracking-tighter">HIZLI SORU FABRİKASI</h1>
+            </div>
             <p class="text-slate-400 text-sm font-medium">Saniyeler içinde OpenTDB formatında API oluşturun.</p>
         </header>
 
@@ -39,30 +45,31 @@
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
-                    <button onclick="processData()" class="btn-primary py-3 rounded-xl shadow-lg">AYRIŞTIR ✨</button>
-                    <button id="apiBtn" onclick="getApiLink()" class="btn-secondary py-3 rounded-xl shadow-lg disabled:opacity-30" disabled>API LİNKİ AL 🌐</button>
+                    <button onclick="processData()" class="btn-primary py-3 rounded-xl shadow-lg active:scale-95 transition-transform">AYRIŞTIR ✨</button>
+                    <button id="apiBtn" onclick="getApiLink()" class="btn-secondary py-3 rounded-xl shadow-lg disabled:opacity-30 active:scale-95 transition-transform" disabled>API LİNKİ AL 🌐</button>
                 </div>
             </div>
 
             <!-- Çıkış Alanı -->
             <div class="card p-6 rounded-3xl shadow-2xl flex flex-col space-y-4">
                 <div id="linkPanel" class="hidden p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl animate-pulse">
-                    <label class="block text-[10px] font-bold text-blue-400 mb-2 uppercase">Canlı API Linkin (Kopyala ve Admin Paneline Yapıştır):</label>
+                    <label class="block text-[10px] font-bold text-blue-400 mb-2 uppercase">Canlı API Linkin (Admin Paneline Yapıştır):</label>
                     <div class="flex gap-2">
-                        <input id="resultLink" readonly class="flex-grow bg-black/40 border border-blue-500/20 text-blue-200 text-[10px] p-2 rounded-lg outline-none">
-                        <button onclick="copyToClipboard('resultLink')" class="bg-blue-600 text-white px-4 rounded-lg text-[10px] font-bold">KOPYALA</button>
+                        <input id="resultLink" readonly class="flex-grow bg-black/40 border border-blue-500/20 text-blue-200 text-[10px] p-2 rounded-lg outline-none font-mono">
+                        <button onclick="copyToClipboard('resultLink')" class="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg text-[10px] font-bold shrink-0">KOPYALA</button>
                     </div>
                 </div>
 
                 <div class="flex justify-between items-center px-1">
-                    <h3 class="text-xs font-bold text-green-500 uppercase tracking-widest">Önizleme (OpenTDB)</h3>
-                    <div class="flex gap-2">
+                    <h3 class="text-xs font-bold text-green-500 uppercase tracking-widest">Önizleme (OpenTDB Format)</h3>
+                    <div class="flex gap-3">
                         <button onclick="downloadJson()" class="text-[10px] text-slate-400 hover:text-white underline">JSON İndir</button>
+                        <button onclick="copyToClipboard('jsonPreview', true)" class="text-[10px] text-slate-400 hover:text-white underline">JSON Kopyala</button>
                     </div>
                 </div>
 
                 <div class="flex-grow bg-black/40 p-4 rounded-2xl font-mono text-[10px] text-green-500 overflow-auto max-h-[450px] border border-slate-800">
-                    <pre id="jsonPreview">Veri bekleniyor...</pre>
+                    <pre id="jsonPreview">Önce metni yapıştırıp 'Ayrıştır' butonuna basın...</pre>
                 </div>
                 
                 <div id="statusMsg" class="text-[10px] text-center font-bold h-4"></div>
@@ -79,13 +86,19 @@
             const preview = document.getElementById('jsonPreview');
             const status = document.getElementById('statusMsg');
             
-            if(!text.trim()) return;
+            if(!text.trim()) {
+                alert("Lütfen metin girin!");
+                return;
+            }
 
             const answers = {};
             if(ansRaw) {
                 const pairs = ansRaw.split(/[,-\s]+/);
                 for(let i=0; i<pairs.length; i+=2) {
-                    if(pairs[i] && pairs[i+1]) answers[pairs[i].replace('.','')] = pairs[i+1].toUpperCase();
+                    if(pairs[i] && pairs[i+1]) {
+                        const qNum = pairs[i].replace(/[^\d]/g, '');
+                        if(qNum) answers[qNum] = pairs[i+1].toUpperCase();
+                    }
                 }
             }
 
@@ -98,24 +111,30 @@
                     opts.push({ key: parts[j][0], text: parts[j+1]?.trim() || "" });
                 }
 
-                const id = block.match(/^(\d+)/)?.[1] || (idx + 1);
+                const idMatch = block.match(/^(\d+)/);
+                const id = idMatch ? idMatch[1] : (idx + 1);
                 const correctKey = answers[id] || "A";
                 const correctObj = opts.find(o => o.key === correctKey) || opts[0];
                 const incorrects = opts.filter(o => o.key !== correctKey).map(o => o.text);
+
+                // Eğer hiç şık bulunamadıysa varsayılanlar ekle (Hata önleyici)
+                const finalCorrect = correctObj ? correctObj.text : "Cevap bulunamadı";
+                const finalIncorrects = incorrects.length > 0 ? incorrects : ["Yanlış Seçenek 1", "Yanlış Seçenek 2", "Yanlış Seçenek 3"];
 
                 return {
                     category: "Genel",
                     type: "multiple",
                     difficulty: "medium",
                     question: qText,
-                    correct_answer: correctObj ? correctObj.text : "",
-                    incorrect_answers: incorrects.length > 0 ? incorrects : ["Yanlış Seçenek 1", "Yanlış Seçenek 2", "Yanlış Seçenek 3"]
+                    correct_answer: finalCorrect,
+                    incorrect_answers: finalIncorrects
                 };
-            }).filter(q => q.question);
+            }).filter(q => q.question.length > 2);
 
             finalData = { response_code: 0, results: results };
             preview.textContent = JSON.stringify(finalData, null, 2);
             document.getElementById('apiBtn').disabled = false;
+            document.getElementById('linkPanel').classList.add('hidden'); // Yeni veri geldiğinde eski linki gizle
             status.innerText = `✅ ${results.length} soru ayrıştırıldı.`;
             status.className = "text-[10px] text-center font-bold text-green-500 h-4";
         }
@@ -126,40 +145,66 @@
             const linkPanel = document.getElementById('linkPanel');
             const resultInput = document.getElementById('resultLink');
             
-            btn.innerHTML = `<span class="loader"></span>...`;
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = `<span class="loader"></span> OLUŞTURULUYOR...`;
             btn.disabled = true;
 
             try {
-                // Daha hızlı bir servis olan jsonblob.com kullanıyoruz
-                const response = await fetch('https://jsonblob.com/api/jsonBlob', {
+                // npoint.io servisi JSON'u body içinde döndürdüğü için CORS sorunlarına daha dayanıklıdır
+                const response = await fetch('https://api.npoint.io/bins', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(finalData)
                 });
 
                 if(response.ok) {
-                    const location = response.headers.get('Location');
-                    // Location header'ı linki verir (http -> https çeviriyoruz)
-                    const secureLink = location.replace('http://', 'https://');
-                    linkPanel.classList.remove('hidden');
-                    resultInput.value = secureLink;
-                    btn.innerHTML = `HAZIR ✅`;
+                    const data = await response.json();
+                    if(data.id) {
+                        const finalLink = `https://api.npoint.io/${data.id}`;
+                        linkPanel.classList.remove('hidden');
+                        resultInput.value = finalLink;
+                        btn.innerHTML = `HAZIR ✅`;
+                        
+                        // Otomatik odaklan
+                        resultInput.focus();
+                        resultInput.select();
+                    } else {
+                        throw new Error("ID alınamadı");
+                    }
                 } else {
-                    throw new Error("Sunucu hatası");
+                    throw new Error("Servis yanıt vermedi");
                 }
             } catch (e) {
-                console.error(e);
-                alert("Link oluşturulamadı. Lütfen 'JSON İndir' butonunu kullanın.");
+                console.error("API Hatası:", e);
+                alert("Link oluşturulamadı. Lütfen 'JSON İndir' butonunu kullanın veya sayfayı yenileyip tekrar deneyin.");
                 btn.innerHTML = `HATA ❌`;
                 btn.disabled = false;
+                setTimeout(() => { 
+                    btn.innerHTML = originalContent; 
+                    btn.disabled = false;
+                }, 3000);
             }
         }
 
-        function copyToClipboard(id) {
-            const input = document.getElementById(id);
-            input.select();
+        function copyToClipboard(id, isPre = false) {
+            const element = document.getElementById(id);
+            let text = "";
+            
+            if(isPre) {
+                text = element.textContent;
+            } else {
+                element.select();
+                text = element.value;
+            }
+
+            const temp = document.createElement("textarea");
+            temp.value = text;
+            document.body.appendChild(temp);
+            temp.select();
             document.execCommand('copy');
-            alert("Link kopyalandı!");
+            document.body.removeChild(temp);
+            
+            alert("Kopyalandı!");
         }
 
         function downloadJson() {
@@ -168,7 +213,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `sorular_${Date.now()}.json`;
+            a.download = `kapisalim_api_${Date.now()}.json`;
             a.click();
             URL.revokeObjectURL(url);
         }
