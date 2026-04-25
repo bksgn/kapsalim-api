@@ -3,202 +3,141 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kapışalım Cloud - API Paneli</title>
-    <!-- Tailwind CSS -->
+    <title>Kapışalım - OpenTDB Uyumlu API Üretici</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React ve Babel (Tarayıcıda derleme için) -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Firebase Altyapısı -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-        // Senin Firebase Bilgilerin (Girdiğin görsele göre güncellendi)
-        const firebaseConfig = {
-            apiKey: "AIzaSyD4JRSgF54worgAYI2V0_7fOuRo3OS1VS8",
-            authDomain: "kapisalim-api.firebaseapp.com",
-            projectId: "kapisalim-api",
-            storageBucket: "kapisalim-api.firebasestorage.app",
-            messagingSenderId: "928562131117",
-            appId: "1:928562131117:web:d27bf8b26338714131d624",
-            measurementId: "G-61FNJGC6HB"
-        };
-
-        // Firebase'i global erişime açıyoruz
-        const app = initializeApp(firebaseConfig);
-        window.db = getFirestore(app);
-        window.auth = getAuth(app);
-        window.fb = { collection, addDoc, serverTimestamp, signInAnonymously };
-        
-        console.log("Firebase initialized successfully.");
-    </script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: sans-serif; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .loader { border: 2px solid #f3f3f3; border-top: 2px solid #eab308; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
 </head>
-<body class="bg-slate-950 text-slate-200 selection:bg-yellow-500/30">
-    <div id="root"></div>
+<body class="min-h-screen p-4 md:p-10 flex flex-col items-center">
 
-    <script type="text/babel">
-        const { useState } = React;
+    <div class="max-w-5xl w-full space-y-8">
+        <div class="text-center">
+            <h1 class="text-4xl font-black text-yellow-500 italic uppercase">🚀 Soru Fabrikası API Paneli</h1>
+            <p class="text-slate-400 mt-2">OpenTDB Formatında Temiz API Linki Üretir</p>
+        </div>
 
-        const App = () => {
-            const [inputText, setInputText] = useState('');
-            const [answerKey, setAnswerKey] = useState('');
-            const [questions, setQuestions] = useState(null);
-            const [generatedUrl, setGeneratedUrl] = useState('');
-            const [loading, setLoading] = useState(false);
-            const [status, setStatus] = useState({ message: '', type: '' });
-
-            // Soru Ayrıştırma (Parse)
-            const handleParse = () => {
-                if (!inputText.trim()) {
-                    setStatus({ message: 'Lütfen metin kutusuna soruları yapıştırın!', type: 'error' });
-                    return;
-                }
-                const answers = {};
-                if (answerKey) {
-                    const pairs = answerKey.split(/[,-\s]+/);
-                    for (let i = 0; i < pairs.length; i += 2) {
-                        if (pairs[i] && pairs[i+1]) {
-                            answers[pairs[i].replace('.', '')] = pairs[i+1].toUpperCase();
-                        }
-                    }
-                }
-
-                const blocks = inputText.split(/\n(?=\d+[\.)\s])/);
-                const parsed = blocks.map((block, i) => {
-                    const parts = block.split(/\n([A-E][\)\.])\s+/);
-                    const qText = parts[0].replace(/^\d+[\.)\s]+/, '').trim();
-                    const opts = {};
-                    for (let j = 1; j < parts.length; j += 2) {
-                        const key = parts[j][0];
-                        opts[key] = parts[j + 1] ? parts[j + 1].trim() : "";
-                    }
-                    const idMatch = block.match(/^(\d+)/);
-                    const id = idMatch ? idMatch[1] : (i + 1);
-
-                    return { id: parseInt(id), question: qText, options: opts, answer: answers[id] || "A" };
-                }).filter(q => q.question);
-
-                setQuestions(parsed);
-                setStatus({ message: `✅ ${parsed.length} soru ayrıştırıldı.`, type: 'success' });
-            };
-
-            // Buluta Kaydetme (API Linki)
-            const handleSave = async () => {
-                if (!questions) return;
-                setLoading(true);
-                try {
-                    // Firebase Anonim Giriş
-                    await window.fb.signInAnonymously(window.auth);
-                    
-                    // Firestore'a kaydet
-                    const docRef = await window.fb.addDoc(window.fb.collection(window.db, "quizzes"), {
-                        questions,
-                        createdAt: window.fb.serverTimestamp()
-                    });
-                    
-                    // API URL'sini oluştur (ProjectId kullanarak)
-                    const projectId = "kapisalim-api"; 
-                    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/quizzes/${docRef.id}?meta=false`;
-                    
-                    setGeneratedUrl(url);
-                    setStatus({ message: '🚀 API Linki başarıyla oluşturuldu!', type: 'success' });
-                } catch (e) {
-                    console.error(e);
-                    setStatus({ message: 'Hata: Firebase kurallarını veya bağlantısını kontrol et!', type: 'error' });
-                }
-                setLoading(false);
-            };
-
-            const copyToClipboard = (txt) => {
-                navigator.clipboard.writeText(txt).then(() => {
-                    alert("Kopyalandı!");
-                });
-            };
-
-            return (
-                <div className="min-h-screen p-4 md:p-10 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-700">
-                    <header className="text-center">
-                        <h1 className="text-5xl font-black text-yellow-500 tracking-tighter italic drop-shadow-lg">KAPIŞALIM CLOUD</h1>
-                        <p className="text-slate-500 mt-2 font-medium tracking-wide text-sm uppercase">Ücretsiz Soru Bankası API Fabrikası</p>
-                    </header>
-
-                    <div className="grid lg:grid-cols-2 gap-8">
-                        {/* Giriş Paneli */}
-                        <div className="bg-slate-900/60 p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl space-y-6 backdrop-blur-xl">
-                            <div>
-                                <label className="block text-[10px] font-bold text-yellow-500 uppercase mb-3 tracking-widest px-2">1. SORU METNİNİ YAPIŞTIR</label>
-                                <textarea 
-                                    value={inputText} 
-                                    onChange={e=>setInputText(e.target.value)} 
-                                    className="w-full h-80 bg-black/40 p-5 rounded-3xl text-sm outline-none border border-slate-800 focus:border-yellow-500 transition-all font-mono leading-relaxed text-slate-300" 
-                                    placeholder="1. Soru metni...&#10;A) Seçenek 1&#10;B) Seçenek 2..."
-                                ></textarea>
-                            </div>
-                            
-                            <div>
-                                <label className="block text-[10px] font-bold text-yellow-500 uppercase mb-3 tracking-widest px-2">2. CEVAP ANAHTARI (1-C, 2-D...)</label>
-                                <input 
-                                    value={answerKey} 
-                                    onChange={e=>setAnswerKey(e.target.value)} 
-                                    className="w-full bg-black/40 p-4 rounded-2xl text-sm outline-none border border-slate-800 focus:border-yellow-500 text-slate-300" 
-                                    placeholder="Örn: 1-C, 2-D, 3-B"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4 pt-2">
-                                <button onClick={handleParse} className="bg-yellow-500 hover:bg-yellow-400 text-black font-black py-5 rounded-2xl transition-all shadow-xl shadow-yellow-500/10 active:scale-95">
-                                    METNİ ÇÖZ ✨
-                                </button>
-                                <button onClick={handleSave} disabled={!questions || loading} className="bg-blue-600 hover:bg-blue-500 text-white font-black py-5 rounded-2xl transition-all disabled:opacity-20 flex items-center justify-center shadow-xl shadow-blue-600/10 active:scale-95">
-                                    {loading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : "API OLUŞTUR 🌐"}
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Sonuç Paneli */}
-                        <div className="bg-slate-900/60 p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl flex flex-col min-h-[500px] backdrop-blur-xl">
-                            {generatedUrl && (
-                                <div className="mb-8 p-5 bg-blue-500/10 border border-blue-500/20 rounded-3xl animate-in fade-in zoom-in">
-                                    <label className="block text-[10px] font-bold text-blue-400 uppercase mb-3 tracking-widest px-1">API Endpoint URL (Canlı Link):</label>
-                                    <div className="flex gap-2">
-                                        <input readOnly value={generatedUrl} className="flex-grow bg-black/40 p-3 rounded-xl text-[10px] text-blue-300 outline-none border border-blue-500/10 font-mono"/>
-                                        <button onClick={()=>copyToClipboard(generatedUrl)} className="bg-blue-600 hover:bg-blue-500 text-white px-5 rounded-xl text-xs font-bold transition-all shrink-0">KOPYALA</button>
-                                    </div>
-                                    <p className="text-[9px] text-slate-500 mt-3 px-1 italic">Bu linki Wix veya herhangi bir uygulamada kullanabilirsin.</p>
-                                </div>
-                            )}
-
-                            <div className="flex justify-between items-center mb-4 px-2">
-                                <h3 className="text-xs font-bold text-green-500 uppercase tracking-widest">JSON Veri Önizleme</h3>
-                                {questions && (
-                                    <button onClick={()=>copyToClipboard(JSON.stringify(questions, null, 2))} className="text-[10px] text-slate-500 hover:text-white transition-colors underline decoration-dotted">
-                                        VERİYİ KOPYALA
-                                    </button>
-                                )}
-                            </div>
-
-                            <div className="flex-grow bg-black/40 p-6 rounded-3xl font-mono text-[11px] text-green-500 overflow-auto border border-slate-800 scrollbar-hide">
-                                {questions ? <pre>{JSON.stringify(questions, null, 2)}</pre> : <div className="h-full flex flex-col items-center justify-center text-slate-700 opacity-40 italic font-sans"><p>Lütfen önce metni çözün...</p></div>}
-                            </div>
-                        </div>
-                    </div>
-
-                    {status.message && (
-                        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl border shadow-2xl text-sm font-bold animate-in fade-in slide-in-from-bottom-4 ${status.type==='error'?'bg-red-500/10 border-red-500/30 text-red-400':'bg-green-500/10 border-green-500/30 text-green-400'}`}>
-                            {status.message}
-                        </div>
-                    )}
+        <div class="grid lg:grid-cols-2 gap-8">
+            <!-- Giriş -->
+            <div class="glass p-6 rounded-[2rem] space-y-6">
+                <div>
+                    <label class="block text-[10px] font-bold text-yellow-500 mb-2 uppercase tracking-widest">1. Metni Yapıştır</label>
+                    <textarea id="inputText" class="w-full h-72 bg-black/40 p-4 rounded-2xl text-sm outline-none border border-slate-800 focus:border-yellow-500 font-mono" placeholder="1. Soru...&#10;A) Şık..."></textarea>
                 </div>
-            );
-        };
+                <div>
+                    <label class="block text-[10px] font-bold text-yellow-500 mb-2 uppercase tracking-widest">2. Cevaplar</label>
+                    <input id="answerKey" type="text" class="w-full bg-black/40 p-3 rounded-xl text-sm outline-none border border-slate-800" placeholder="Örn: 1-C, 2-D">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="parseQuestions()" class="bg-yellow-500 text-black font-bold py-3 rounded-xl hover:bg-yellow-400 transition-all">ÇÖZ ✨</button>
+                    <button id="apiBtn" onclick="createCleanApi()" class="bg-blue-600 text-white font-bold py-3 rounded-xl disabled:opacity-30 transition-all" disabled>TEMİZ API LİNKİ AL 🌐</button>
+                </div>
+            </div>
 
-        // React 18 Render
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+            <!-- Çıkış -->
+            <div class="glass p-6 rounded-[2rem] flex flex-col">
+                <div id="urlArea" class="hidden mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl animate-pulse">
+                    <label class="block text-[10px] font-bold text-blue-400 mb-1">SİTEN İÇİN KULLANILACAK API LİNKİ:</label>
+                    <div class="flex gap-2">
+                        <input id="apiLink" readonly class="flex-grow bg-black/50 p-2 rounded text-[10px] text-blue-200 outline-none">
+                        <button onclick="copyUrl()" class="bg-blue-600 text-white px-3 rounded text-[10px] font-bold">KOPYALA</button>
+                    </div>
+                </div>
+
+                <h3 class="text-xs font-bold text-green-500 mb-2 uppercase tracking-widest">OpenTDB Formatında Önizleme</h3>
+                <pre id="outputJson" class="flex-grow bg-black/50 p-4 rounded-2xl text-[10px] text-green-400 font-mono overflow-auto max-h-[400px]">İşlem bekleniyor...</pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentQuizData = null;
+
+        function parseQuestions() {
+            const text = document.getElementById('inputText').value;
+            const answersRaw = document.getElementById('answerKey').value;
+            const answers = {};
+            
+            if (answersRaw) {
+                const pairs = answersRaw.split(/[,-\s]+/);
+                for (let i = 0; i < pairs.length; i += 2) {
+                    if (pairs[i] && pairs[i+1]) answers[pairs[i].replace('.', '')] = pairs[i+1].toUpperCase();
+                }
+            }
+
+            const blocks = text.split(/\n(?=\d+[\.)\s])/);
+            const results = blocks.map((block, index) => {
+                const parts = block.split(/\n([A-E][\)\.])\s+/);
+                const questionText = parts[0].replace(/^\d+[\.)\s]+/, '').trim();
+                
+                const options = [];
+                for (let j = 1; j < parts.length; j += 2) {
+                    options.push({ key: parts[j][0], text: parts[j+1]?.trim() || "" });
+                }
+
+                const id = block.match(/^(\d+)/)?.[1] || (index + 1);
+                const correctLetter = answers[id] || "A";
+                const correctAnswerObj = options.find(o => o.key === correctLetter);
+                const incorrectAnswers = options.filter(o => o.key !== correctLetter).map(o => o.text);
+
+                // OpenTDB Formatı (Sitenin anladığı yapı)
+                return {
+                    category: "Genel Kültür",
+                    type: "multiple",
+                    difficulty: "medium",
+                    question: questionText,
+                    correct_answer: correctAnswerObj ? correctAnswerObj.text : (options[0]?.text || ""),
+                    incorrect_answers: incorrectAnswers.length > 0 ? incorrectAnswers : ["B seçeneği", "C seçeneği", "D seçeneği"]
+                };
+            }).filter(q => q.question);
+
+            // OpenTDB'nin beklediği ana yapı: { "results": [...] }
+            currentQuizData = { response_code: 0, results: results };
+            document.getElementById('outputJson').textContent = JSON.stringify(currentQuizData, null, 2);
+            document.getElementById('apiBtn').disabled = false;
+        }
+
+        async function createCleanApi() {
+            if (!currentQuizData) return;
+            const btn = document.getElementById('apiBtn');
+            btn.innerHTML = `<span class="loader"></span> OLUŞTURULUYOR...`;
+            btn.disabled = true;
+
+            try {
+                // JSONbin.io kullanarak saf JSON linki oluşturuyoruz (Üye olmadan geçici kullanım)
+                const response = await fetch('https://api.jsonbin.io/v3/b', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Bin-Private': 'false'
+                    },
+                    body: JSON.stringify(currentQuizData)
+                });
+
+                const data = await response.json();
+                if (data.metadata && data.metadata.id) {
+                    // ?meta=false ekleyerek sadece saf JSON'u alıyoruz
+                    const finalUrl = `https://api.jsonbin.io/v3/b/${data.metadata.id}?meta=false`;
+                    document.getElementById('urlArea').classList.remove('hidden');
+                    document.getElementById('apiLink').value = finalUrl;
+                    btn.innerHTML = `API HAZIR ✅`;
+                }
+            } catch (error) {
+                alert("Hata oluştu! Lütfen tekrar deneyin.");
+                btn.innerHTML = `TEKRAR DENE`;
+                btn.disabled = false;
+            }
+        }
+
+        function copyUrl() {
+            const input = document.getElementById('apiLink');
+            input.select();
+            document.execCommand('copy');
+            alert("URL Kopyalandı! Şimdi Kapışalım Admin Paneli 'Soru Fabrikası'na yapıştırabilirsin.");
+        }
     </script>
 </body>
 </html>
