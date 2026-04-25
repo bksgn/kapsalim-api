@@ -68,7 +68,7 @@
                     <h3 class="text-xs font-bold text-green-500 uppercase tracking-widest">Önizleme (OpenTDB Standart)</h3>
                     <div class="flex gap-3">
                         <button onclick="downloadJson()" class="text-[10px] text-slate-400 hover:text-white underline">JSON İndir</button>
-                        <button onclick="copyToClipboard('jsonPreview', true)" class="text-[10px] text-slate-400 hover:text-white underline">JSON Kopyala</button>
+                        <button onclick="copyToClipboard('jsonPreview', true)" class="text-[10px] text-slate-400 hover:text-white underline font-bold">JSON Kopyala</button>
                     </div>
                 </div>
 
@@ -97,7 +97,6 @@
 
             const answers = {};
             if(ansRaw) {
-                // Metin içindeki 1-A, 2-B gibi kalıpları yakala
                 const pairs = ansRaw.split(/[,-\s]+/);
                 for(let i=0; i<pairs.length; i+=2) {
                     if(pairs[i] && pairs[i+1]) {
@@ -107,10 +106,8 @@
                 }
             }
 
-            // Soruları rakamla başlayan satırlara göre böl
             const blocks = text.split(/\n(?=\d+[\.)\s])/);
             const results = blocks.map((block, idx) => {
-                // Şıkları böl (A), B), C) gibi)
                 const parts = block.split(/\n([A-E][\)\.])\s+/);
                 const qText = parts[0].replace(/^\d+[\.)\s]+/, '').trim();
                 const opts = [];
@@ -152,31 +149,38 @@
             btn.innerHTML = `<span class="loader"></span> OLUŞTURULUYOR...`;
             btn.disabled = true;
 
-            try {
-                // npoint.io servisi veriyi temiz ve her yerden erişilebilir (CORS) şekilde döndürür
-                const response = await fetch('https://api.npoint.io/bins', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(finalData)
-                });
+            // npoint.io servisine istek gönderiyoruz
+            const createBin = async () => {
+                try {
+                    const response = await fetch('https://api.npoint.io/bins', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(finalData)
+                    });
 
-                if(response.ok) {
-                    const data = await response.json();
-                    if(data.id) {
-                        const finalLink = `https://api.npoint.io/${data.id}`;
-                        linkPanel.classList.remove('hidden');
-                        resultInput.value = finalLink;
-                        btn.innerHTML = `HAZIR ✅`;
-                        resultInput.select();
-                    } else {
-                        throw new Error("ID alınamadı");
+                    if(response.ok) {
+                        const data = await response.json();
+                        if(data.id) {
+                            const finalLink = `https://api.npoint.io/${data.id}`;
+                            linkPanel.classList.remove('hidden');
+                            resultInput.value = finalLink;
+                            btn.innerHTML = `HAZIR ✅`;
+                            resultInput.select();
+                            return true;
+                        }
                     }
-                } else {
-                    throw new Error("Servis yanıt vermedi");
+                } catch (e) {
+                    console.error("npoint Hatası:", e);
                 }
-            } catch (e) {
-                console.error("API Hatası:", e);
-                alert("Link oluşturulamadı. Lütfen 'JSON İndir' butonunu kullanın.");
+                return false;
+            };
+
+            const success = await createBin();
+            
+            if (!success) {
+                // Hata durumunda kullanıcıyı bilgilendir ve butonu sıfırla
+                console.error("API Link oluşturulamadı.");
+                alert("Link şu an oluşturulamıyor (Sunucu yoğun olabilir). Lütfen sağ taraftaki 'JSON Kopyala' butonuna basıp veriyi sitenizdeki alana elle yapıştırmayı deneyin veya birkaç dakika sonra tekrar deneyin.");
                 btn.innerHTML = `HATA ❌`;
                 btn.disabled = false;
                 setTimeout(() => { btn.innerHTML = originalContent; }, 3000);
@@ -190,9 +194,15 @@
             temp.value = text;
             document.body.appendChild(temp);
             temp.select();
-            document.execCommand('copy');
+            
+            try {
+                document.execCommand('copy');
+                alert("Kopyalandı!");
+            } catch (err) {
+                alert("Kopyalama başarısız, lütfen metni seçip kendiniz kopyalayın.");
+            }
+            
             document.body.removeChild(temp);
-            alert("Kopyalandı!");
         }
 
         function downloadJson() {
