@@ -4,143 +4,177 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kapışalım Cloud - API Paneli</title>
-    <!-- Tailwind CSS ve Fontlar -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React ve Babel (Tarayıcıda JSX çalıştırmak için) -->
+    <!-- React ve Babel -->
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-</head>
-<body class="bg-slate-950 text-slate-200">
-    <div id="root"></div>
+    
+    <!-- Firebase SDK (CDN üzerinden) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-    <script type="text/babel">
-        const { useState, useEffect } = React;
-
-        // --- DİKKAT: Firebase Ayarlarını Buraya Ekle ---
-        // Kendi Firebase projenin ayarlarını "firebaseConfig" içine yapıştır.
+        // --- ÖNEMLİ: Eğer API linki almak istiyorsan Firebase konsolundan aldığın bilgileri buraya yazmalısın ---
         const firebaseConfig = {
-            apiKey: "API_KEY_BURAYA",
+            apiKey: "BURAYA_API_KEY_GELECEK",
             authDomain: "PROJE_ID.firebaseapp.com",
             projectId: "PROJE_ID",
             storageBucket: "PROJE_ID.appspot.com",
             messagingSenderId: "SENDER_ID",
             appId: "APP_ID"
         };
-        // ----------------------------------------------
+        // -----------------------------------------------------
+
+        window.fbApp = initializeApp(firebaseConfig);
+        window.fbDb = getFirestore(window.fbApp);
+        window.fbAuth = getAuth(window.fbApp);
+        window.fbUtils = { collection, addDoc, serverTimestamp, signInAnonymously };
+    </script>
+</head>
+<body class="bg-slate-950 text-slate-200">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState } = React;
 
         const App = () => {
             const [inputText, setInputText] = useState('');
             const [answerKey, setAnswerKey] = useState('');
             const [questions, setQuestions] = useState(null);
             const [generatedUrl, setGeneratedUrl] = useState('');
+            const [loading, setLoading] = useState(false);
             const [status, setStatus] = useState({ message: '', type: '' });
 
             const handleParse = () => {
                 if (!inputText.trim()) {
-                    setStatus({ message: 'Lütfen soru metni girin!', type: 'error' });
+                    setStatus({ message: 'Lütfen metin girin!', type: 'error' });
                     return;
                 }
-
                 const answers = {};
                 if (answerKey) {
-                    const pairs = answerKey.split(/[,-\s]+/);
-                    for (let i = 0; i < pairs.length; i += 2) {
-                        if (pairs[i] && pairs[i + 1]) {
-                            answers[pairs[i].replace('.', '')] = pairs[i + 1].toUpperCase();
-                        }
-                    }
+                    answerKey.split(/[,-\s]+/).forEach((val, i, arr) => {
+                        if (i % 2 === 0 && arr[i+1]) answers[val.replace('.', '')] = arr[i+1].toUpperCase();
+                    });
                 }
-
                 const blocks = inputText.split(/\n(?=\d+[\.)\s])/);
                 const parsed = blocks.map((block, i) => {
                     const parts = block.split(/\n([A-E][\)\.])\s+/);
-                    const question_text = parts[0].replace(/^\d+[\.)\s]+/, '').trim();
-                    
-                    const options = {};
-                    for (let j = 1; j < parts.length; j += 2) {
-                        const key = parts[j][0];
-                        options[key] = parts[j + 1] ? parts[j + 1].trim() : "";
-                    }
-
-                    const idMatch = block.match(/^(\d+)/);
-                    const id = idMatch ? idMatch[1] : (i + 1);
-
-                    return {
-                        id: parseInt(id),
-                        question: question_text,
-                        options: options,
-                        answer: answers[id] || "A"
-                    };
+                    const qText = parts[0].replace(/^\d+[\.)\s]+/, '').trim();
+                    const opts = {};
+                    for (let j = 1; j < parts.length; j += 2) opts[parts[j][0]] = parts[j + 1]?.trim() || "";
+                    const id = block.match(/^(\d+)/)?.[1] || (i + 1);
+                    return { id: parseInt(id), question: qText, options: opts, answer: answers[id] || "A" };
                 }).filter(q => q.question);
 
                 setQuestions(parsed);
                 setStatus({ message: `✅ ${parsed.length} soru ayrıştırıldı.`, type: 'success' });
             };
 
-            const copyToClipboard = (text) => {
-                const textArea = document.createElement("textarea");
-                textArea.value = text;
-                document.body.appendChild(textArea);
-                textArea.select();
+            const handleSave = async () => {
+                if (!questions) return;
+                setLoading(true);
+                try {
+                    await window.fbUtils.signInAnonymously(window.fbAuth);
+                    const docRef = await window.fbUtils.addDoc(window.fbUtils.collection(window.fbDb, "quizzes"), {
+                        questions,
+                        createdAt: window.fbUtils.serverTimestamp()
+                    });
+                    const url = `https://firestore.googleapis.com/v1/projects/${window.fbApp.options.projectId}/databases/(default)/documents/quizzes/${docRef.id}?meta=false`;
+                    setGeneratedUrl(url);
+                    setStatus({ message: '🚀 API Linki Başarıyla Oluşturuldu!', type: 'success' });
+                } catch (e) {
+                    console.error(e);
+                    setStatus({ message: 'Hata: Firebase bilgilerini index.html içinde güncellemelisin!', type: 'error' });
+                }
+                setLoading(false);
+            };
+
+            const copy = (txt) => {
+                const temp = document.createElement("textarea");
+                temp.value = txt;
+                document.body.appendChild(temp);
+                temp.select();
                 document.execCommand('copy');
-                document.body.removeChild(textArea);
+                document.body.removeChild(temp);
                 alert("Kopyalandı!");
             };
 
             return (
-                <div className="min-h-screen p-4 md:p-8 font-sans">
-                    <div className="max-w-5xl mx-auto space-y-8">
-                        <div className="text-center space-y-2">
-                            <h1 className="text-4xl font-extrabold text-yellow-500 tracking-tight">KAPIŞALIM CLOUD</h1>
-                            <p className="text-slate-400 text-sm">Ücretsiz Soru Bankası API Fabrikası</p>
-                        </div>
+                <div className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto space-y-8">
+                    <div className="text-center">
+                        <h1 className="text-4xl font-black text-yellow-500 tracking-tighter">KAPIŞALIM CLOUD</h1>
+                        <p className="text-slate-500 text-sm">Ücretsiz Soru Bankası API Fabrikası</p>
+                    </div>
 
-                        <div className="grid lg:grid-cols-2 gap-8">
-                            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-6">
-                                <div>
-                                    <label className="block text-xs font-bold text-yellow-500 uppercase mb-2">1. Metni Yapıştır</label>
-                                    <textarea 
-                                        value={inputText}
-                                        onChange={(e) => setInputText(e.target.value)}
-                                        className="w-full h-64 bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm outline-none"
-                                        placeholder="1. Soru...&#10;A) Şık..."
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-yellow-500 uppercase mb-2">2. Cevaplar</label>
-                                    <input 
-                                        type="text"
-                                        value={answerKey}
-                                        onChange={(e) => setAnswerKey(e.target.value)}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm outline-none"
-                                        placeholder="1-C, 2-D"
-                                    />
-                                </div>
-                                <button 
-                                    onClick={handleParse}
-                                    className="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold py-3 rounded-xl transition-all"
-                                >
-                                    METNİ ÇÖZ 🔍
-                                </button>
+                    <div className="grid lg:grid-cols-2 gap-8">
+                        {/* Sol Taraf: Giriş */}
+                        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 space-y-6 shadow-2xl">
+                            <div>
+                                <label className="block text-[10px] font-bold text-yellow-500 uppercase mb-2">1. SORU METNİNİ YAPIŞTIR</label>
+                                <textarea 
+                                    value={inputText} 
+                                    onChange={e=>setInputText(e.target.value)} 
+                                    className="w-full h-64 bg-black p-4 rounded-2xl text-sm outline-none border border-slate-800 focus:border-yellow-500 transition-all font-mono" 
+                                    placeholder="1. Soru metni...&#10;A) Seçenek 1&#10;B) Seçenek 2..."
+                                ></textarea>
+                            </div>
+                            
+                            <div>
+                                <label className="block text-[10px] font-bold text-yellow-500 uppercase mb-2">2. CEVAPLAR (OPSİYONEL)</label>
+                                <input 
+                                    value={answerKey} 
+                                    onChange={e=>setAnswerKey(e.target.value)} 
+                                    className="w-full bg-black p-3 rounded-xl text-sm outline-none border border-slate-800 focus:border-yellow-500" 
+                                    placeholder="Örn: 1-C, 2-D, 3-B"
+                                />
                             </div>
 
-                            <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl flex flex-col min-h-[500px]">
-                                <h3 className="text-sm font-bold text-green-500 uppercase mb-4">JSON Önizleme</h3>
-                                <div className="flex-grow bg-black/40 border border-slate-800 rounded-xl p-4 overflow-auto font-mono text-[11px] text-green-400">
-                                    {questions ? <pre>{JSON.stringify(questions, null, 2)}</pre> : "İşlem bekleniyor..."}
-                                </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <button onClick={handleParse} className="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 rounded-2xl transition-all shadow-lg shadow-yellow-500/20">
+                                    METNİ ÇÖZ ✨
+                                </button>
+                                <button onClick={handleSave} disabled={!questions || loading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-2xl transition-all disabled:opacity-30 flex items-center justify-center">
+                                    {loading ? "..." : "API OLUŞTUR 🌐"}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Sağ Taraf: Önizleme ve Link */}
+                        <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 flex flex-col shadow-2xl">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-sm font-bold text-green-500 uppercase tracking-widest">JSON ÖNİZLEME</h3>
                                 {questions && (
-                                    <button 
-                                        onClick={() => copyToClipboard(JSON.stringify(questions))}
-                                        className="mt-4 bg-blue-600 text-white py-2 rounded-lg text-xs font-bold"
-                                    >
-                                        VERİYİ KOPYALA
+                                    <button onClick={()=>copy(JSON.stringify(questions, null, 2))} className="text-[10px] text-slate-500 hover:text-white underline">
+                                        JSON'U KOPYALA
                                     </button>
                                 )}
                             </div>
+
+                            {generatedUrl && (
+                                <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-2xl animate-pulse-once">
+                                    <label className="block text-[10px] font-bold text-blue-400 uppercase mb-2">Senin Canlı API Linkin:</label>
+                                    <div className="flex gap-2">
+                                        <input readOnly value={generatedUrl} className="flex-grow bg-black p-2 rounded-lg text-[10px] text-blue-300 outline-none border border-blue-500/20"/>
+                                        <button onClick={()=>copy(generatedUrl)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded-lg text-[10px] font-bold">KOPYALA</button>
+                                    </div>
+                                    <p className="text-[9px] text-slate-500 mt-2">* Bu link her yerde (Wix, Mobil vb.) çalışır.</p>
+                                </div>
+                            )}
+
+                            <div className="flex-grow bg-black/50 p-4 rounded-2xl font-mono text-[11px] text-green-500 overflow-auto max-h-[450px] border border-slate-800">
+                                {questions ? <pre>{JSON.stringify(questions, null, 2)}</pre> : <div className="h-full flex items-center justify-center text-slate-700 italic">İşlem bekleniyor...</div>}
+                            </div>
                         </div>
                     </div>
+
+                    {status.message && (
+                        <div className={`text-center text-xs font-bold p-3 rounded-xl border ${status.type==='error'?'bg-red-500/10 border-red-500/20 text-red-400':'bg-green-500/10 border-green-500/20 text-green-400'}`}>
+                            {status.message}
+                        </div>
+                    )}
                 </div>
             );
         };
