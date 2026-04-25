@@ -6,21 +6,18 @@
     <title>Kapışalım Cloud - API Paneli</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React ve Babel -->
-    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- React ve Babel (Tarayıcıda derleme için) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-</head>
-<body class="bg-slate-950 text-slate-200 selection:bg-yellow-500/30">
-    <div id="root"></div>
-
-    <script type="module" data-type="babel">
-        // Firebase SDK'larını CDN üzerinden içe aktarıyoruz (Daha hızlı ve kurulum gerektirmez)
+    
+    <!-- Firebase Altyapısı -->
+    <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
-        // --- GÜNCELLENDİ: Senin Özel Firebase Bilgilerin ---
+        // Senin Firebase Bilgilerin (Girdiğin görsele göre güncellendi)
         const firebaseConfig = {
             apiKey: "AIzaSyD4JRSgF54worgAYI2V0_7fOuRo3OS1VS8",
             authDomain: "kapisalim-api.firebaseapp.com",
@@ -30,12 +27,20 @@
             appId: "1:928562131117:web:d27bf8b26338714131d624",
             measurementId: "G-61FNJGC6HB"
         };
-        // --------------------------------------------------
 
+        // Firebase'i global erişime açıyoruz
         const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
+        window.db = getFirestore(app);
+        window.auth = getAuth(app);
+        window.fb = { collection, addDoc, serverTimestamp, signInAnonymously };
+        
+        console.log("Firebase initialized successfully.");
+    </script>
+</head>
+<body class="bg-slate-950 text-slate-200 selection:bg-yellow-500/30">
+    <div id="root"></div>
 
+    <script type="text/babel">
         const { useState } = React;
 
         const App = () => {
@@ -46,10 +51,10 @@
             const [loading, setLoading] = useState(false);
             const [status, setStatus] = useState({ message: '', type: '' });
 
-            // Soru Ayrıştırma Mantığı
+            // Soru Ayrıştırma (Parse)
             const handleParse = () => {
                 if (!inputText.trim()) {
-                    setStatus({ message: 'Lütfen önce soru metnini yapıştırın!', type: 'error' });
+                    setStatus({ message: 'Lütfen metin kutusuna soruları yapıştırın!', type: 'error' });
                     return;
                 }
                 const answers = {};
@@ -78,51 +83,47 @@
                 }).filter(q => q.question);
 
                 setQuestions(parsed);
-                setGeneratedUrl(''); // Yeni ayrıştırmada eski linki temizle
                 setStatus({ message: `✅ ${parsed.length} soru ayrıştırıldı.`, type: 'success' });
             };
 
-            // Firebase'e Kaydetme ve Link Oluşturma
+            // Buluta Kaydetme (API Linki)
             const handleSave = async () => {
-                if (!questions || questions.length === 0) return;
+                if (!questions) return;
                 setLoading(true);
                 try {
-                    // Anonim giriş yap (Kritik: Firebase Auth'da Anonymous açık olmalı)
-                    await signInAnonymously(auth);
+                    // Firebase Anonim Giriş
+                    await window.fb.signInAnonymously(window.auth);
                     
-                    // Firestore'a döküman ekle
-                    const docRef = await addDoc(collection(db, "quizzes"), {
+                    // Firestore'a kaydet
+                    const docRef = await window.fb.addDoc(window.fb.collection(window.db, "quizzes"), {
                         questions,
-                        createdAt: serverTimestamp()
+                        createdAt: window.fb.serverTimestamp()
                     });
                     
-                    // REST API formatında URL oluştur
-                    const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/quizzes/${docRef.id}?meta=false`;
+                    // API URL'sini oluştur (ProjectId kullanarak)
+                    const projectId = "kapisalim-api"; 
+                    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/quizzes/${docRef.id}?meta=false`;
                     
                     setGeneratedUrl(url);
-                    setStatus({ message: '🚀 API Endpoint yayına alındı!', type: 'success' });
+                    setStatus({ message: '🚀 API Linki başarıyla oluşturuldu!', type: 'success' });
                 } catch (e) {
-                    console.error("Hata:", e);
-                    setStatus({ message: 'Bağlantı Hatası! Firebase Firestore kurallarını "Allow" yapmayı ve Authentication kısmından "Anonymous" girişini açmayı unutmayın.', type: 'error' });
+                    console.error(e);
+                    setStatus({ message: 'Hata: Firebase kurallarını veya bağlantısını kontrol et!', type: 'error' });
                 }
                 setLoading(false);
             };
 
-            const copy = (txt) => {
-                const temp = document.createElement("textarea");
-                temp.value = txt;
-                document.body.appendChild(temp);
-                temp.select();
-                document.execCommand('copy');
-                document.body.removeChild(temp);
-                alert("Kopyalandı!");
+            const copyToClipboard = (txt) => {
+                navigator.clipboard.writeText(txt).then(() => {
+                    alert("Kopyalandı!");
+                });
             };
 
             return (
-                <div className="min-h-screen p-4 md:p-10 max-w-7xl mx-auto space-y-8">
-                    <header className="text-center animate-in fade-in slide-in-from-top-4 duration-1000">
-                        <h1 className="text-6xl font-black text-yellow-500 tracking-tighter italic drop-shadow-2xl">KAPIŞALIM CLOUD</h1>
-                        <p className="text-slate-400 mt-2 font-medium tracking-wide">Ücretsiz & Kalıcı Soru Bankası API Fabrikası</p>
+                <div className="min-h-screen p-4 md:p-10 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-700">
+                    <header className="text-center">
+                        <h1 className="text-5xl font-black text-yellow-500 tracking-tighter italic drop-shadow-lg">KAPIŞALIM CLOUD</h1>
+                        <p className="text-slate-500 mt-2 font-medium tracking-wide text-sm uppercase">Ücretsiz Soru Bankası API Fabrikası</p>
                     </header>
 
                     <div className="grid lg:grid-cols-2 gap-8">
@@ -133,7 +134,7 @@
                                 <textarea 
                                     value={inputText} 
                                     onChange={e=>setInputText(e.target.value)} 
-                                    className="w-full h-80 bg-black/40 p-5 rounded-3xl text-sm outline-none border border-slate-800 focus:border-yellow-500 transition-all font-mono leading-relaxed scrollbar-hide" 
+                                    className="w-full h-80 bg-black/40 p-5 rounded-3xl text-sm outline-none border border-slate-800 focus:border-yellow-500 transition-all font-mono leading-relaxed text-slate-300" 
                                     placeholder="1. Soru metni...&#10;A) Seçenek 1&#10;B) Seçenek 2..."
                                 ></textarea>
                             </div>
@@ -143,7 +144,7 @@
                                 <input 
                                     value={answerKey} 
                                     onChange={e=>setAnswerKey(e.target.value)} 
-                                    className="w-full bg-black/40 p-4 rounded-2xl text-sm outline-none border border-slate-800 focus:border-yellow-500" 
+                                    className="w-full bg-black/40 p-4 rounded-2xl text-sm outline-none border border-slate-800 focus:border-yellow-500 text-slate-300" 
                                     placeholder="Örn: 1-C, 2-D, 3-B"
                                 />
                             </div>
@@ -161,27 +162,27 @@
                         {/* Sonuç Paneli */}
                         <div className="bg-slate-900/60 p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl flex flex-col min-h-[500px] backdrop-blur-xl">
                             {generatedUrl && (
-                                <div className="mb-8 p-5 bg-blue-500/10 border border-blue-500/20 rounded-3xl animate-in fade-in zoom-in duration-500">
-                                    <label className="block text-[10px] font-bold text-blue-400 uppercase mb-3 tracking-widest px-1">API Endpoint URL (OpenTDB Standart):</label>
+                                <div className="mb-8 p-5 bg-blue-500/10 border border-blue-500/20 rounded-3xl animate-in fade-in zoom-in">
+                                    <label className="block text-[10px] font-bold text-blue-400 uppercase mb-3 tracking-widest px-1">API Endpoint URL (Canlı Link):</label>
                                     <div className="flex gap-2">
                                         <input readOnly value={generatedUrl} className="flex-grow bg-black/40 p-3 rounded-xl text-[10px] text-blue-300 outline-none border border-blue-500/10 font-mono"/>
-                                        <button onClick={()=>copy(generatedUrl)} className="bg-blue-600 hover:bg-blue-500 text-white px-5 rounded-xl text-xs font-bold transition-all shrink-0">KOPYALA</button>
+                                        <button onClick={()=>copyToClipboard(generatedUrl)} className="bg-blue-600 hover:bg-blue-500 text-white px-5 rounded-xl text-xs font-bold transition-all shrink-0">KOPYALA</button>
                                     </div>
-                                    <p className="text-[9px] text-slate-500 mt-3 px-1 italic">Bu link ile Wix, WordPress veya Mobil uygulamanızdan soruları çekebilirsiniz.</p>
+                                    <p className="text-[9px] text-slate-500 mt-3 px-1 italic">Bu linki Wix veya herhangi bir uygulamada kullanabilirsin.</p>
                                 </div>
                             )}
 
                             <div className="flex justify-between items-center mb-4 px-2">
                                 <h3 className="text-xs font-bold text-green-500 uppercase tracking-widest">JSON Veri Önizleme</h3>
                                 {questions && (
-                                    <button onClick={()=>copy(JSON.stringify(questions, null, 2))} className="text-[10px] text-slate-500 hover:text-white transition-colors underline decoration-dotted">
-                                        Ham Veriyi Kopyala
+                                    <button onClick={()=>copyToClipboard(JSON.stringify(questions, null, 2))} className="text-[10px] text-slate-500 hover:text-white transition-colors underline decoration-dotted">
+                                        VERİYİ KOPYALA
                                     </button>
                                 )}
                             </div>
 
                             <div className="flex-grow bg-black/40 p-6 rounded-3xl font-mono text-[11px] text-green-500 overflow-auto border border-slate-800 scrollbar-hide">
-                                {questions ? <pre>{JSON.stringify(questions, null, 2)}</pre> : <div className="h-full flex flex-col items-center justify-center text-slate-700 opacity-40 italic"><p>Lütfen metni ayıklayın...</p></div>}
+                                {questions ? <pre>{JSON.stringify(questions, null, 2)}</pre> : <div className="h-full flex flex-col items-center justify-center text-slate-700 opacity-40 italic font-sans"><p>Lütfen önce metni çözün...</p></div>}
                             </div>
                         </div>
                     </div>
@@ -195,6 +196,7 @@
             );
         };
 
+        // React 18 Render
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
